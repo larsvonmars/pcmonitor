@@ -19,6 +19,10 @@ class CPUUsageMonitor:
             print(f"Failed to initialize NVML: {error}")
             self.gpu_available = False
         
+        self.gpu_details = []  # This will hold the GPU details
+
+        if self.gpu_available:
+            self.fetch_gpu_details()
         self.gpu_memory_usage = []  # This will hold the last 10 GPU memory usage percentages
 
         # CPU Usage
@@ -35,24 +39,25 @@ class CPUUsageMonitor:
 
         self.init_ui()
 
-    def display_gpu_info(self):
-        if not self.gpu_available:
-            return
-
+    def fetch_gpu_details(self): #Fetches details for each available GPU.
         for i in range(self.device_count):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
             gpu_name = pynvml.nvmlDeviceGetName(handle)
             gpu_driver = pynvml.nvmlSystemGetDriverVersion()
             gpu_memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            total_memory = gpu_memory_info.total / 1024 ** 2  # Convert bytes to MB
-            
-            # Displaying the information
-            self.gpu_info.insert(tk.END, f"GPU {i}:\n")
-            self.gpu_info.insert(tk.END, f"Name: {gpu_name}\n")
-            self.gpu_info.insert(tk.END, f"Driver Version: {gpu_driver}\n")
-            self.gpu_info.insert(tk.END, f"Total Memory: {total_memory:.2f} MB\n\n")
-        
-        self.gpu_info.config(state=tk.DISABLED)  # Make the Text widget read-only
+            self.gpu_details.append({
+                'name': gpu_name,
+                'driver': gpu_driver,
+                'total_memory': gpu_memory_info.total / 1024 ** 2  # Convert bytes to MB
+            })
+
+    def display_gpu_info(self):
+        # Displays information for each GPU in the Text widget.
+        for gpu in self.gpu_details:
+            self.gpu_info.insert(tk.END, f"Name: {gpu['name']}\n")
+            self.gpu_info.insert(tk.END, f"Driver Version: {gpu['driver']}\n")
+            self.gpu_info.insert(tk.END, f"Total Memory: {gpu['total_memory']:.2f} MB\n\n")
+        self.gpu_info.config(state=tk.DISABLED)  # Make the widget read-only
 
 
 
