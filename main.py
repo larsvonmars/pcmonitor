@@ -9,6 +9,18 @@ class CPUUsageMonitor:
     def __init__(self, root):
         self.root = root
         self.after_id = None  # Initialize a variable to store the 'after' ID
+
+        # GPU Usage
+        try:
+            pynvml.nvmlInit()
+            self.gpu_available = True
+            self.device_count = pynvml.nvmlDeviceGetCount()
+        except pynvml.NVMLError as error:
+            print(f"Failed to initialize NVML: {error}")
+            self.gpu_available = False
+        
+        self.gpu_memory_usage = []  # This will hold the last 10 GPU memory usage percentages
+
         # CPU Usage
         self.cpu_usage = []  # This will now hold the last 10 CPU usage percentages
 
@@ -22,6 +34,26 @@ class CPUUsageMonitor:
         self.colors = ['lightcoral', 'lightblue']
 
         self.init_ui()
+
+    def display_gpu_info(self):
+        if not self.gpu_available:
+            return
+
+        for i in range(self.device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            gpu_name = pynvml.nvmlDeviceGetName(handle)
+            gpu_driver = pynvml.nvmlSystemGetDriverVersion()
+            gpu_memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            total_memory = gpu_memory_info.total / 1024 ** 2  # Convert bytes to MB
+            
+            # Displaying the information
+            self.gpu_info.insert(tk.END, f"GPU {i}:\n")
+            self.gpu_info.insert(tk.END, f"Name: {gpu_name}\n")
+            self.gpu_info.insert(tk.END, f"Driver Version: {gpu_driver}\n")
+            self.gpu_info.insert(tk.END, f"Total Memory: {total_memory:.2f} MB\n\n")
+        
+        self.gpu_info.config(state=tk.DISABLED)  # Make the Text widget read-only
+
 
 
     def init_ui(self):
@@ -56,6 +88,23 @@ class CPUUsageMonitor:
         self.disk_canvas.draw()
         self.disk_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+        # GPU Usage Diagram (if GPU is available)
+        if self.gpu_available:
+            gpu_frame = tk.Frame(self.root)
+            gpu_frame.grid(row=3, column=0, padx=10, pady=10)
+            fig4 = Figure(figsize=(3, 2), dpi=100)
+            self.gpu_plot = fig4.add_subplot(1, 1, 1)
+            self.gpu_canvas = FigureCanvasTkAgg(fig4, master=gpu_frame)
+            self.gpu_canvas.draw()
+            self.gpu_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # GPU Info Textbox (if GPU is available)
+        if self.gpu_available:
+            self.gpu_info = tk.Text(self.root, height=5, width=40)
+            self.gpu_info.grid(row=3, column=1, padx=10, pady=10)
+            self.display_gpu_info()  # Now that gpu_info is defined, you can populate it
+
+            
 
         self.update_plot()
 
@@ -72,6 +121,24 @@ class CPUUsageMonitor:
         if len(self.memory_usage) >= 10:
             self.memory_usage.pop(0)
         self.memory_usage.append(memory_percent)
+
+        # Read GPU memory usage (if GPU is available)
+        if self.gpu_available:
+            temp_gpu_usage = []  # Temporary list to store current readings
+            for i in range(self.device_count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                gpu_memory_percent = meminfo.used / meminfo.total * 100
+                temp_gpu_usage.append(gpu_memory_percent)
+
+            # Now, update the self.gpu_memory_usage with the latest readings
+            if not self.gpu_memory_usage:  # If it's the first reading
+                self.gpu_memory_usage = [[usage] for usage in temp_gpu_usage]
+            else:
+                for i, usage in enumerate(temp_gpu_usage):
+                    if len(self.gpu_memory_usage[i]) >= 10:  # Keep last 10 readings
+                        self.gpu_memory_usage[i].pop(0)
+                    self.gpu_memory_usage[i].append(usage)
 
     def update_plot(self):
         self.read_system_usage()
@@ -97,6 +164,17 @@ class CPUUsageMonitor:
         # Update Disk plot
         self.disk_plot.set_title("Disk Usage")
         
+        # Update GPU plot if GPU is available
+        if self.gpu_available:
+            self.gpu_plot.clear()
+            for gpu_usage in self.gpu_memory_usage:
+                self.gpu_plot.plot(gpu_usage, '-o')  # You might want to differentiate GPUs by color
+            self.gpu_plot.set_title("GPU Memory Usage")
+            self.gpu_plot.set_xlabel("Samples")
+            self.gpu_plot.set_ylabel("GPU Memory Usage (%)")
+            self.gpu_plot.set_ylim(0, 100)
+            self.gpu_canvas.draw_idle()
+
         # Cancel the existing 'after' call if it exists
         if self.after_id is not None:
             self.root.after_cancel(self.after_id)
